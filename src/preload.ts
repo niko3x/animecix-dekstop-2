@@ -1,0 +1,128 @@
+// Preload script — implements contextBridge.exposeInMainWorld('animecix', ...)
+// This is the ONLY communication channel between renderer (animecix.tv) and main process.
+// ipcRenderer is never exposed directly — all calls are wrapped per AnimecixAPI contract.
+// See: animecix-v2/src/types/animecix-api.d.ts
+
+import { contextBridge, ipcRenderer } from 'electron';
+import type { AnimecixAPI, DownloadProgress } from './types/animecix-api';
+import { UPDATER_CHANNELS } from './types/updater.js';
+import type { UpdateReadyPayload, DownloadProgressPayload, UpdaterApi } from './types/updater.js';
+
+const api: AnimecixAPI = {
+  // Window controls
+  minimize: () => ipcRenderer.invoke('window:minimize'),
+  maximize: () => ipcRenderer.invoke('window:maximize'),
+  close: () => ipcRenderer.invoke('window:close'),
+  isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+
+  // Fullscreen event subscription — returns unsubscribe function
+  onFullscreenChange: (cb: (isFullscreen: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, isFullscreen: boolean) => {
+      cb(isFullscreen);
+    };
+    ipcRenderer.on('window:fullscreen-changed', handler);
+    // Return unsubscribe function
+    return () => {
+      ipcRenderer.removeListener('window:fullscreen-changed', handler);
+    };
+  },
+
+  // Platform info — synchronous, set at preload time
+  platform: process.platform,
+  version: process.env.npm_package_version,
+
+  // Network status — synchronous
+  isOnline: () => navigator.onLine,
+
+  // --- Video data pre-fetch (fast path for tau-video sources) ---
+  // Website calls fetchVideoData BEFORE loading the player iframe.
+  // Main process fetches from tau-video.xyz API (no CORS, Node.js net module).
+  // Website then opens iframe with tau-player:// URL and passes data via postMessage.
+  // This eliminates the player's own API fetch, cutting ~200-500ms from load time.
+  fetchVideoData: (id: string, vid?: string) => ipcRenderer.invoke('video:fetch', id, vid),
+
+  // Converts a tau-video.xyz embed URL to the local tau-player:// URL.
+  // Website uses this to set iframe src directly, skipping the network intercept redirect.
+  getPlayerUrl: (embedUrl: string): string | null => {
+    try {
+      const parsed = new URL(embedUrl);
+      if (parsed.hostname === 'tau-video.xyz' && (parsed.pathname.startsWith('/embed/') || parsed.pathname.startsWith('/embed-2/'))) {
+        return `tau-player://bundle${parsed.pathname}${parsed.search}`;
+      }
+    } catch { /* invalid URL */ }
+    return null;
+  },
+
+  // --- Subtitle preferences (Phase 2) ---
+  // Called by animecix.tv website (NOT by the player iframe).
+  // animecix.tv is the bridge between player iframe (postMessage) and SQLite (IPC):
+  //   - On episode load: animecix.tv calls getSubtitlePref -> gets saved lang
+  //     -> sends changeSub postMessage to player iframe to apply the preference
+  //   - On caption change: player sends captionsChanged postMessage to animecix.tv
+  //     -> animecix.tv calls setSubtitlePref to persist the new preference to SQLite
+  getSubtitlePref: (animeId: string) => ipcRenderer.invoke('subtitle:get', animeId),
+  setSubtitlePref: (animeId: string, language: string) => ipcRenderer.invoke('subtitle:set', animeId, language),
+
+  // --- Episode metadata for Discord RPC (Phase 2) ---
+  // Called by animecix.tv website on episode change.
+  // animecix.tv already sends 'updateCurrent' IPC; episode:update is the richer channel
+  // for Discord RPC carrying title, season, episode, translator, and posterUrl.
+  updateEpisode: (data) => ipcRenderer.send('episode:update', data),
+
+  // Play state for Discord RPC — called by animecix.tv when it receives currentTime
+  // postMessage from the player iframe (currentTime includes isPlaying every 5s)
+  updatePlayState: (isPlaying: boolean) => ipcRenderer.send('episode:playState', isPlaying),
+
+  // Idle state — called when player is closed or navigated away from
+  setIdle: () => ipcRenderer.send('episode:idle'),
+
+  // --- Downloads (Phase 3) ---
+  downloadVideo: (episodeId: string, url: string, title: string, subUrls: { language: string; url: string }[]) =>
+    ipcRenderer.invoke('download:start', episodeId, url, title, subUrls),
+  pauseDownload: (id: string) => ipcRenderer.invoke('download:pause', id),
+  resumeDownload: (id: string) => ipcRenderer.invoke('download:resume', id),
+  cancelDownload: (id: string) => ipcRenderer.invoke('download:cancel', id),
+  getDownloadQueue: () => ipcRenderer.invoke('download:getQueue'),
+  onDownloadProgress: (cb: (item: DownloadProgress) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, item: DownloadProgress) => cb(item);
+    ipcRenderer.on('download:progress', handler);
+    return () => ipcRenderer.removeListener('download:progress', handler);
+  },
+  onDownloadComplete: (cb: (item: { id: string; episodeId: string; title: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, item: { id: string; episodeId: string; title: string }) => cb(item);
+    ipcRenderer.on('download:complete', handler);
+    return () => ipcRenderer.removeListener('download:complete', handler);
+  },
+
+  // --- Cache (Phase 3) ---
+  cacheEpisode: (episodeId: string, videoUrl: string, isHls: boolean, subs: { language: string; url: string }[]) =>
+    ipcRenderer.invoke('cache:episode', episodeId, videoUrl, isHls, subs),
+  isAvailableOffline: (episodeId: string) => ipcRenderer.invoke('offline:isAvailable', episodeId),
+  getOfflineUrl: (episodeId: string) => ipcRenderer.invoke('offline:getUrl', episodeId),
+
+  // --- Storage management (Phase 3) ---
+  getStorageInfo: () => ipcRenderer.invoke('storage:getInfo'),
+  deleteDownload: (episodeId: string) => ipcRenderer.invoke('storage:deleteDownload', episodeId),
+  deleteCache: (episodeId: string) => ipcRenderer.invoke('storage:deleteCache', episodeId),
+  setCacheMaxBytes: (maxBytes: number) => ipcRenderer.invoke('storage:setCacheMax', maxBytes),
+};
+
+// --- Updater API (Phase 4) — conforming to UpdaterApi ---
+const updaterApi: UpdaterApi = {
+  checkForUpdates: () => ipcRenderer.invoke(UPDATER_CHANNELS.CHECK_FOR_UPDATES),
+  install: () => ipcRenderer.invoke(UPDATER_CHANNELS.INSTALL),
+  dismissBanner: () => ipcRenderer.send(UPDATER_CHANNELS.DISMISS_BANNER),
+  onUpdateReady: (cb: (payload: UpdateReadyPayload) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, payload: UpdateReadyPayload) => cb(payload);
+    ipcRenderer.on(UPDATER_CHANNELS.UPDATE_READY, listener);
+    return () => ipcRenderer.removeListener(UPDATER_CHANNELS.UPDATE_READY, listener);
+  },
+  onDownloadProgress: (cb: (payload: DownloadProgressPayload) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, payload: DownloadProgressPayload) => cb(payload);
+    ipcRenderer.on(UPDATER_CHANNELS.DOWNLOAD_PROGRESS, listener);
+    return () => ipcRenderer.removeListener(UPDATER_CHANNELS.DOWNLOAD_PROGRESS, listener);
+  },
+};
+
+contextBridge.exposeInMainWorld('animecix', api);
+contextBridge.exposeInMainWorld('animecixAPI', { updater: updaterApi });

@@ -1,0 +1,4 @@
+provider: github
+owner: CaptainSP
+repo: animecix-dekstop-2
+updaterCacheDirName: animecix-updater

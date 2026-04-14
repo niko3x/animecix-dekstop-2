@@ -1,0 +1,5 @@
+node_modules/
+.vite/
+out/
+assets/player/
+dev-app-update.yml

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
+  <title>Güncelleme</title>
+  <link rel="stylesheet" href="./updater-banner.css">
+</head>
+<body>
+  <div class="banner" role="status" aria-live="polite">
+    <span class="msg" id="msg">Yeni sürüm hazır</span>
+    <button id="install" class="primary">Şimdi yeniden başlat</button>
+    <button id="dismiss" class="secondary">Sonra</button>
+  </div>
+  <script type="module" src="./updater-banner.js"></script>
+</body>
+</html>

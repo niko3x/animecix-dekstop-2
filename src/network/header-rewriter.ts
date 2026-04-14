@@ -1,0 +1,77 @@
+import { HEADER_RULES, matchesHeaderRule } from './header-rules';
+
+/**
+ * Registers the onBeforeSendHeaders handler for CDN header rewriting.
+ * This is separate from onBeforeRequest and can coexist with it.
+ *
+ * Applies referer and user-agent headers for tau-video.xyz CDN requests
+ * so video streams are authorized by the CDN.
+ */
+export function setupHeaderRewriter(): void {
+  // Guard: only run in Electron environment
+  let session: typeof import('electron').Session;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const electron = require('electron') as typeof import('electron');
+    session = electron.session;
+  } catch {
+    // Not in Electron (e.g., tests) — skip registration
+    return;
+  }
+
+  // Build a combined filter covering all tau-video.xyz patterns
+  const urlPatterns = HEADER_RULES.flatMap((rule) => rule.urlPatterns);
+
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: urlPatterns },
+    (
+      details: Electron.OnBeforeSendHeadersListenerDetails,
+      callback: (response: Electron.BeforeSendResponse) => void
+    ) => {
+      const rule = matchesHeaderRule(details.url, HEADER_RULES);
+      const requestHeaders = { ...details.requestHeaders };
+
+      if (rule) {
+        if (rule.headers.referer) {
+          requestHeaders['Referer'] = rule.headers.referer;
+        }
+        if (rule.headers.userAgent) {
+          requestHeaders['User-Agent'] = rule.headers.userAgent;
+        }
+      }
+
+      callback({ requestHeaders });
+    }
+  );
+
+  // Fix CORS for the built-in player (tau-player:// origin).
+  // Video CDNs return Access-Control-Allow-Origin: null which doesn't match
+  // tau-player://bundle, so the browser blocks the response.
+  // Only override when the existing value would block the request.
+  session.defaultSession.webRequest.onHeadersReceived(
+    (
+      details: Electron.OnHeadersReceivedListenerDetails,
+      callback: (response: Electron.HeadersReceivedResponse) => void
+    ) => {
+      const responseHeaders = { ...details.responseHeaders };
+
+      // Find existing ACAO header (case-insensitive)
+      const acaoKey = Object.keys(responseHeaders).find(
+        (k) => k.toLowerCase() === 'access-control-allow-origin'
+      );
+      const acaoValue = acaoKey ? responseHeaders[acaoKey]?.[0] : undefined;
+
+      // Only override if the header is missing, 'null', or a specific origin that isn't '*'
+      // Don't touch it if it's already '*' (avoids duplicate '*, *')
+      if (acaoValue !== '*') {
+        if (acaoKey) {
+          responseHeaders[acaoKey] = ['*'];
+        } else {
+          responseHeaders['Access-Control-Allow-Origin'] = ['*'];
+        }
+      }
+
+      callback({ responseHeaders });
+    }
+  );
+}

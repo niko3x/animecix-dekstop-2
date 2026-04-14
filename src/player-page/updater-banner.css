@@ -1,0 +1,50 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #111827;
+  color: #f9fafb;
+  height: 100%;
+  overflow: hidden;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 100%;
+  border-top: 1px solid #1f2937;
+}
+
+.msg {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+button {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: filter 0.15s ease;
+}
+
+button:hover {
+  filter: brightness(1.15);
+}
+
+button.primary {
+  background: #3b82f6;
+  color: #fff;
+}
+
+button.secondary {
+  background: transparent;
+  color: #9ca3af;
+  border: 1px solid #374151;
+}
