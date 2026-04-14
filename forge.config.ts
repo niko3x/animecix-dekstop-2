@@ -32,11 +32,13 @@ const config: ForgeConfig = {
       appleApiIssuer: process.env.APPLE_API_ISSUER!,    // ASC issuer UUID
     } : undefined,
   },
-  rebuildConfig: {
-    force: true,
-    buildFromSource: true,
-    onlyModules: ['better-sqlite3'],
-  },
+  // Defaults let Forge auto-detect native deps and use prebuilt binaries
+  // when available. better-sqlite3 publishes prebuilts for darwin-x64,
+  // darwin-arm64, win32-x64 matching Electron's ABI — no need for
+  // buildFromSource. The previous config (force + buildFromSource +
+  // onlyModules) caused silent failure on the arm64 slice of universal
+  // builds, after which prune removed the module entirely.
+  rebuildConfig: {},
   makers: [
     new MakerSquirrel({
       name: 'AnimeciX',                                 // D-27 — installer name
