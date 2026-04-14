@@ -1,7 +1,7 @@
 {
   "name": "animecix-v2",
   "productName": "AnimeciX",
-  "version": "1.0.0",
+  "version": "0.0.0-rc1",
   "description": "My Electron application description",
   "main": ".vite/build/main.js",
   "private": true,
