@@ -121,20 +121,23 @@ jobs:
         run: npx electron-forge make --arch=x64 --platform=win32
 
       # -------- upload artifacts to draft release --------
+      # Note on env: set GITHUB_TOKEN (not GH_TOKEN) so both gh CLI and
+      # our generate-update-manifest.mjs find it. Do NOT override
+      # GITHUB_REPOSITORY / GITHUB_REF_NAME at step level — they are
+      # readonly defaults set by Actions and re-declaring them can mask
+      # their value to child processes.
       - name: Upload macOS artifacts
         if: matrix.os == 'macos-14'
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
           echo "--- Artifacts in out/make ---"
           find out/make -type f | sort
           echo "--- Uploading DMG + ZIP ---"
-          find out/make -type f \( -name '*.dmg' -o -name '*.zip' \) -print0 \
-            | xargs -0 -I {} gh release upload "$TAG" {} --clobber --repo "$GITHUB_REPOSITORY"
+          find out/make -type f \( -name '*.dmg' -o -name '*.zip' \) \
+            -exec gh release upload "$TAG" {} --clobber --repo "$GITHUB_REPOSITORY" \;
           echo "--- Generating and uploading latest-mac.yml ---"
           node scripts/generate-update-manifest.mjs darwin
 
@@ -142,16 +145,14 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
           echo "--- Artifacts in out/make ---"
           find out/make -type f | sort
           echo "--- Uploading Setup.exe + nupkg + RELEASES ---"
-          find out/make -type f \( -name '*Setup.exe' -o -name '*.nupkg' -o -name 'RELEASES' \) -print0 \
-            | xargs -0 -I {} gh release upload "$TAG" {} --clobber --repo "$GITHUB_REPOSITORY"
+          find out/make -type f \( -name '*Setup.exe' -o -name '*.nupkg' -o -name 'RELEASES' \) \
+            -exec gh release upload "$TAG" {} --clobber --repo "$GITHUB_REPOSITORY" \;
           echo "--- Generating and uploading latest.yml ---"
           node scripts/generate-update-manifest.mjs win32
 
