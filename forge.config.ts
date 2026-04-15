@@ -6,6 +6,15 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+// External-to-Vite native deps that must remain in the packaged app's
+// node_modules/ so require() resolves them at runtime. plugin-vite
+// clears package.json.dependencies in its afterCopy hook; the subsequent
+// prune step then removes every node_module. We re-add these entries so
+// prune keeps them (and transitively their own deps like `bindings`).
+const EXTERNAL_NATIVE_DEPS = ['better-sqlite3', 'bufferutil', 'utf-8-validate'];
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -31,6 +40,30 @@ const config: ForgeConfig = {
       appleApiKeyId: process.env.APPLE_API_KEY_ID!,     // 10-char ASC key ID
       appleApiIssuer: process.env.APPLE_API_ISSUER!,    // ASC issuer UUID
     } : undefined,
+    // Runs AFTER @electron-forge/plugin-vite's afterCopy (which clears
+    // package.json.dependencies). We re-add Vite-external native deps so
+    // the following prune step keeps them in node_modules/.
+    afterCopy: [
+      (buildPath, _electronVersion, _platform, _arch, callback) => {
+        try {
+          const buildPkgPath = path.join(buildPath, 'package.json');
+          const projectPkg = JSON.parse(
+            fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'),
+          );
+          const buildPkg = JSON.parse(fs.readFileSync(buildPkgPath, 'utf8'));
+          buildPkg.dependencies = buildPkg.dependencies || {};
+          for (const dep of EXTERNAL_NATIVE_DEPS) {
+            if (projectPkg.dependencies?.[dep]) {
+              buildPkg.dependencies[dep] = projectPkg.dependencies[dep];
+            }
+          }
+          fs.writeFileSync(buildPkgPath, JSON.stringify(buildPkg, null, 2));
+          callback();
+        } catch (err) {
+          callback(err as Error);
+        }
+      },
+    ],
   },
   // Defaults let Forge auto-detect native deps and use prebuilt binaries
   // when available. better-sqlite3 publishes prebuilts for darwin-x64,
