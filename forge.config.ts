@@ -10,10 +10,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 // External-to-Vite native deps that must remain in the packaged app's
-// node_modules/ so require() resolves them at runtime. plugin-vite
-// clears package.json.dependencies in its afterCopy hook; the subsequent
-// prune step then removes every node_module. We re-add these entries so
-// prune keeps them (and transitively their own deps like `bindings`).
+// node_modules/ so require() resolves them at runtime. plugin-vite's
+// ignore filter excludes everything except .vite/ from the copy step,
+// so node_modules never makes it into the build directory. We physically
+// copy these modules (and their transitive runtime deps) in afterCopy.
 const EXTERNAL_NATIVE_DEPS = ['better-sqlite3', 'bufferutil', 'utf-8-validate'];
 
 const config: ForgeConfig = {
@@ -40,24 +40,38 @@ const config: ForgeConfig = {
       appleApiKeyId: process.env.APPLE_API_KEY_ID!,     // 10-char ASC key ID
       appleApiIssuer: process.env.APPLE_API_ISSUER!,    // ASC issuer UUID
     } : undefined,
-    // Runs AFTER @electron-forge/plugin-vite's afterCopy (which clears
-    // package.json.dependencies). We re-add Vite-external native deps so
-    // the following prune step keeps them in node_modules/.
+    // plugin-vite's ignore filter excludes everything except .vite/ from
+    // the Electron Packager copy step — node_modules never reaches the
+    // build directory. We physically copy external native deps (and their
+    // transitive runtime dependencies) so require() works at runtime.
     afterCopy: [
       (buildPath, _electronVersion, _platform, _arch, callback) => {
         try {
-          const buildPkgPath = path.join(buildPath, 'package.json');
-          const projectPkg = JSON.parse(
-            fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'),
-          );
-          const buildPkg = JSON.parse(fs.readFileSync(buildPkgPath, 'utf8'));
-          buildPkg.dependencies = buildPkg.dependencies || {};
-          for (const dep of EXTERNAL_NATIVE_DEPS) {
-            if (projectPkg.dependencies?.[dep]) {
-              buildPkg.dependencies[dep] = projectPkg.dependencies[dep];
+          const srcNM = path.resolve(__dirname, 'node_modules');
+          const destNM = path.join(buildPath, 'node_modules');
+          fs.mkdirSync(destNM, { recursive: true });
+
+          const copied = new Set<string>();
+          function copyDep(name: string) {
+            if (copied.has(name)) return;
+            copied.add(name);
+            const src = path.join(srcNM, name);
+            if (!fs.existsSync(src)) return;
+            fs.cpSync(src, path.join(destNM, name), { recursive: true });
+            // Recursively copy transitive production deps
+            const depPkgPath = path.join(src, 'package.json');
+            if (fs.existsSync(depPkgPath)) {
+              const depPkg = JSON.parse(fs.readFileSync(depPkgPath, 'utf8'));
+              for (const transDep of Object.keys(depPkg.dependencies || {})) {
+                copyDep(transDep);
+              }
             }
           }
-          fs.writeFileSync(buildPkgPath, JSON.stringify(buildPkg, null, 2));
+
+          for (const dep of EXTERNAL_NATIVE_DEPS) {
+            copyDep(dep);
+          }
+          console.log(`[afterCopy] Copied native deps to build: ${[...copied].join(', ')}`);
           callback();
         } catch (err) {
           callback(err as Error);
