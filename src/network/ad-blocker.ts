@@ -1,11 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const ABPFilterParser = require('abp-filter-parser') as {
-  parse: (text: string, filterData: object) => void;
-  matches: (filterData: object, url: string, options: { domain: string }) => boolean;
-};
+import * as ABPFilterParser from 'abp-filter-parser';
 
 /**
  * Pure function: returns true if the URL is a first-party domain that
