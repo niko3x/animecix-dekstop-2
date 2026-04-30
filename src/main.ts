@@ -131,6 +131,84 @@ if (!gotLock) {
     trayManager = new TrayManager(mainWindow, queue);
     setupCloseIntercept(mainWindow, () => trayManager);
 
+    // D-06 + D-07 (drag region) and RESEARCH.md Pitfall 5 (website-deploy lag fallback).
+    //
+    // Selectors:
+    //   - `#appMenu` is the Angular app-bar's draggable region (rendered when website
+    //     detects desktop via `window.animecix`). Already styled with `-webkit-app-region: drag`
+    //     in the website's own SCSS — this injection is a redundancy / fallback.
+    //   - `material-navbar:not(.transparent) .navbar-container` covers the brief moment
+    //     during Angular bootstrap before `fromApp$` becomes true, AND the case where the
+    //     production website hasn't yet deployed the `app-bar` styling.
+    //   - `no-drag` overrides on links/buttons/inputs/[role=button]/mat-icon ensure interactive
+    //     elements stay clickable inside the drag region.
+    //
+    // The macOS-only rule hides the website's custom min/max/close buttons (`#appMenu .col-sm-3`)
+    // so users don't see them duplicated alongside the OS traffic lights while the website
+    // lags behind on deploying Plan 04's Angular conditional. Plan 04 ships the matching
+    // `@if (!isMac$())` template change, but production animecix.tv may serve the OLD bundle
+    // for days/weeks after the desktop release. This injection is the safety net.
+    //
+    // RESEARCH.md "Flagged" section approves using `did-finish-load` instead of CONTEXT.md
+    // D-06's `dom-ready`: both fire before Angular bootstrap (so the difference is academic
+    // for our static stylesheet), AND `did-finish-load` is the established convention in
+    // this file (see line 156 deep-link handler).
+    //
+    // RESEARCH.md Pitfall 1: `insertCSS` is cleared on every full navigation, so we use
+    // `.on(...)` (recurring) and track the returned key to call `removeInsertedCSS` before
+    // re-injecting — prevents stylesheet accumulation across reloads.
+    //
+    // RESEARCH.md Pitfall 6: `cssOrigin: 'user'` wins specificity vs the page's own
+    // stylesheets per CSS cascade — guarantees the drag region works even if the website's
+    // own SCSS later overrides matching selectors.
+    const DRAG_REGION_CSS = process.platform === 'darwin'
+      ? `
+        #appMenu,
+        material-navbar:not(.transparent) .navbar-container {
+          -webkit-app-region: drag;
+          -webkit-user-select: none;
+        }
+        #appMenu a, #appMenu button, #appMenu input, #appMenu [role="button"],
+        material-navbar a, material-navbar button, material-navbar input,
+        material-navbar [role="button"], material-navbar mat-icon {
+          -webkit-app-region: no-drag;
+        }
+        /* macOS-only: hide the website's custom right-column min/max/close buttons.
+           Pairs with Plan 04's @if (!isMac$()) template guard but ships independently
+           so users don't see double controls during the website-deploy lag window. */
+        #appMenu .col-sm-3 {
+          display: none !important;
+        }
+      `
+      : `
+        #appMenu,
+        material-navbar:not(.transparent) .navbar-container {
+          -webkit-app-region: drag;
+          -webkit-user-select: none;
+        }
+        #appMenu a, #appMenu button, #appMenu input, #appMenu [role="button"],
+        material-navbar a, material-navbar button, material-navbar input,
+        material-navbar [role="button"], material-navbar mat-icon {
+          -webkit-app-region: no-drag;
+        }
+      `;
+
+    let dragCssKey: string | null = null;
+    mainWindow.webContents.on('did-finish-load', async () => {
+      // Remove the previous injection (if any) to avoid accumulation across reloads.
+      if (dragCssKey && mainWindow) {
+        try {
+          await mainWindow.webContents.removeInsertedCSS(dragCssKey);
+        } catch {
+          // Ignore — key may have been auto-cleared by Electron on full navigation.
+        }
+      }
+      if (mainWindow) {
+        // cssOrigin: 'user' wins specificity vs the page's own author-origin stylesheets.
+        dragCssKey = await mainWindow.webContents.insertCSS(DRAG_REGION_CSS, { cssOrigin: 'user' });
+      }
+    });
+
     // Auto-destroy tray when all downloads complete
     queue.on('queueEmpty', () => {
       if (trayManager?.isActive()) {
