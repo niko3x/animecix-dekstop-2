@@ -2,6 +2,7 @@ import { Tray, Menu, app, BrowserWindow, nativeImage } from 'electron';
 import path from 'node:path';
 import { DownloadQueue } from './DownloadQueue';
 import type { UpdaterService } from '../updater/UpdaterService.js';
+import { markQuitting } from '../window/WindowService';
 
 export class TrayManager {
   private tray: Tray | null = null;
@@ -57,7 +58,7 @@ export class TrayManager {
         enabled: this.updater !== null,
       },
       { type: 'separator' },
-      { label: 'Cikis', click: () => app.quit() },
+      { label: 'Cikis', click: () => { markQuitting(); app.quit(); } },
     ]);
     this.tray.setContextMenu(contextMenu);
   }

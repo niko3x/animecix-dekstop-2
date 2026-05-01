@@ -14,6 +14,12 @@ function debounce<T extends (...args: Parameters<T>) => void>(fn: T, ms: number)
   }) as T;
 }
 
+let isQuitting = false;
+
+export function markQuitting(): void {
+  isQuitting = true;
+}
+
 export function createWindow(storage: StorageService): BrowserWindow {
   const savedBounds = storage.getWindowBounds();
 
@@ -145,11 +151,19 @@ export function setupCloseIntercept(
   getTrayManager: () => TrayManager | null,
 ): void {
   win.on('close', (event) => {
+    // GUARD 1 (D-15): downloads-active hide-to-tray takes priority.
     const trayManager = getTrayManager();
     if (trayManager && trayManager.hasActiveDownloads()) {
       event.preventDefault();
       win.hide();
       trayManager.createTray();
+      return;
+    }
+
+    // GUARD 2 (D-12): macOS close-to-hide. Bypassed when isQuitting is true (D-14).
+    if (process.platform === 'darwin' && !isQuitting) {
+      event.preventDefault();
+      win.hide();
     }
   });
 }

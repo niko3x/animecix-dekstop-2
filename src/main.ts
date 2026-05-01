@@ -9,7 +9,7 @@ import { app, BrowserWindow, ipcMain, net } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { StorageService } from './storage/StorageService';
-import { createWindow, setupCloseIntercept } from './window/WindowService';
+import { createWindow, setupCloseIntercept, markQuitting } from './window/WindowService';
 import { registerWindowIpc } from './window/window.ipc';
 import { AdBlocker } from './network/ad-blocker';
 import { setupRequestInterception } from './network/request-handler';
@@ -321,9 +321,13 @@ if (!gotLock) {
     }
   });
 
-  // macOS: re-create window when dock icon clicked and no windows are open
+  // D-13: macOS dock-icon re-show. Hidden windows count in getAllWindows(),
+  // so the old length-check missed them (RESEARCH.md Pitfall 4).
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0 && storage) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    } else if (storage) {
       mainWindow = createWindow(storage);
       registerWindowIpc(mainWindow);
     }
@@ -331,6 +335,9 @@ if (!gotLock) {
 
   // Clean shutdown — destroy tray, Discord RPC, close StorageService before quitting
   app.on('before-quit', () => {
+    // D-14: set quit flag FIRST so subsequent close events skip macOS hide-on-close.
+    markQuitting();
+
     // T-4-04 mitigation: dispose updater timers before quit to avoid file-lock races
     updaterService?.dispose();
     updaterService = null;
