@@ -4,6 +4,8 @@ import './player/tau-protocol'; // Side-effect: registers tau-player:// scheme p
 import { registerTauProtocol } from './player/tau-protocol';
 import './offline/offline-protocol'; // Side-effect: registers animecix-offline:// scheme privileges
 import { registerOfflineProtocol } from './offline/offline-protocol';
+import './library/library-protocol'; // Side-effect: registers animecix-library:// scheme privileges
+import { registerLibraryProtocol } from './library/library-protocol';
 
 import { app, BrowserWindow, ipcMain, net } from 'electron';
 import path from 'node:path';
@@ -28,6 +30,8 @@ import { TrayManager } from './download/TrayManager';
 import { UpdaterService } from './updater/UpdaterService';
 import { registerUpdaterIpc } from './updater/updater.ipc';
 import { UpdaterBanner } from './updater/UpdaterBanner';
+import { LibraryManager } from './library/LibraryManager';
+import { registerLibraryIpc } from './library/library.ipc';
 
 // Handle Squirrel.Windows install/uninstall shortcuts
 if (started) {
@@ -40,6 +44,7 @@ let discord: DiscordService | null = null;
 let trayManager: TrayManager | null = null;
 let updaterService: UpdaterService | null = null;
 let updaterBanner: UpdaterBanner | null = null;
+let libraryManager: LibraryManager | null = null;
 
 // --- Episode metadata state for Discord RPC play state updates ---
 // animecix.tv is the bridge between the player iframe (postMessage) and main process (IPC).
@@ -105,6 +110,9 @@ if (!gotLock) {
     // Register animecix-offline:// protocol handler
     registerOfflineProtocol(downloadsDir, cacheDir, storage);
 
+    // Phase 7: Register animecix-library:// protocol handler
+    registerLibraryProtocol();
+
     // Download queue and cache
     const queue = new DownloadQueue(storage, downloadsDir);
     const cache = new StreamCache(storage, cacheDir);
@@ -126,6 +134,10 @@ if (!gotLock) {
 
     // Register download/cache/storage IPC handlers
     registerDownloadIpc(mainWindow, queue, cache, storage, evictor, downloadsDir, cacheDir);
+
+    // Phase 7: Library BrowserView overlay + IPC handlers
+    libraryManager = new LibraryManager(mainWindow);
+    registerLibraryIpc(mainWindow, storage!, libraryManager);
 
     // System tray for background downloads
     trayManager = new TrayManager(mainWindow, queue);
@@ -220,6 +232,12 @@ if (!gotLock) {
         trayManager.showWindow();
       }
     });
+
+    // Per D-04: Auto-show library when app opens with no internet
+    const isOnline = net.isOnline();
+    if (!isOnline) {
+      libraryManager.show();
+    }
 
     // Phase 4: Auto-update via electron-updater
     updaterService = new UpdaterService();
@@ -348,6 +366,8 @@ if (!gotLock) {
     updaterService = null;
     updaterBanner?.dispose();
     updaterBanner = null;
+    libraryManager?.dispose();
+    libraryManager = null;
     trayManager?.destroyTray();
     trayManager = null;
     discord?.destroy();

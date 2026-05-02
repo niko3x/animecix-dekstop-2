@@ -5,6 +5,7 @@ import { StorageService } from '../storage/StorageService';
 import { CacheEvictor } from '../cache/CacheEvictor';
 import fs from 'node:fs';
 import path from 'node:path';
+import { downloadPoster } from '../library/library.ipc';
 
 export function registerDownloadIpc(
   mainWindow: BrowserWindow,
@@ -16,11 +17,29 @@ export function registerDownloadIpc(
   cacheDir: string
 ): void {
   // --- Download control ---
-  ipcMain.handle('download:start', async (_event, episodeId: string, url: string, title: string, subUrls: { language: string; url: string }[]) => {
+  ipcMain.handle('download:start', async (_event, episodeId: string, url: string, title: string, subUrls: { language: string; url: string }[], metadata?: { animeTitle: string; seasonNumber?: string; episodeNumber?: string; translator?: string; posterUrl?: string; }) => {
     // Validate URL scheme — only https allowed per T-03-13
     if (!url.startsWith('https://')) {
       throw new Error('Only HTTPS download URLs are allowed');
     }
+
+    // Per D-07: Save episode metadata at download time for offline library
+    if (metadata) {
+      const posterPath = metadata.posterUrl
+        ? await downloadPoster(metadata.posterUrl, episodeId)
+        : '';
+      storage.upsertEpisodeMetadata({
+        episodeId,
+        animeTitle: metadata.animeTitle,
+        seasonNumber: metadata.seasonNumber ?? '',
+        episodeNumber: metadata.episodeNumber ?? '',
+        translator: metadata.translator ?? '',
+        posterUrl: metadata.posterUrl ?? '',
+        posterPath,
+        source: 'download',
+      });
+    }
+
     return queue.add(episodeId, url, title, subUrls);
   });
 
@@ -58,8 +77,26 @@ export function registerDownloadIpc(
   });
 
   // --- Cache control ---
-  ipcMain.handle('cache:episode', async (_event, episodeId: string, videoUrl: string, isHls: boolean, subs: { language: string; url: string }[]) => {
+  ipcMain.handle('cache:episode', async (_event, episodeId: string, videoUrl: string, isHls: boolean, subs: { language: string; url: string }[], metadata?: { animeTitle: string; seasonNumber?: string; episodeNumber?: string; translator?: string; posterUrl?: string; }) => {
     await cache.cacheEpisode(episodeId, videoUrl, isHls, subs);
+
+    // Per D-07 + PLAY-05: Save episode metadata at cache time for offline library
+    // This ensures cached (auto-watched) episodes appear in the library
+    if (metadata) {
+      const posterPath = metadata.posterUrl
+        ? await downloadPoster(metadata.posterUrl, episodeId)
+        : '';
+      storage.upsertEpisodeMetadata({
+        episodeId,
+        animeTitle: metadata.animeTitle,
+        seasonNumber: metadata.seasonNumber ?? '',
+        episodeNumber: metadata.episodeNumber ?? '',
+        translator: metadata.translator ?? '',
+        posterUrl: metadata.posterUrl ?? '',
+        posterPath,
+        source: 'cache',
+      });
+    }
   });
 
   // --- Offline availability ---

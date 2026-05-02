@@ -78,8 +78,8 @@ const api: AnimecixAPI = {
   setIdle: () => ipcRenderer.send('episode:idle'),
 
   // --- Downloads (Phase 3) ---
-  downloadVideo: (episodeId: string, url: string, title: string, subUrls: { language: string; url: string }[]) =>
-    ipcRenderer.invoke('download:start', episodeId, url, title, subUrls),
+  downloadVideo: (episodeId: string, url: string, title: string, subUrls: { language: string; url: string }[], metadata?: { animeTitle: string; seasonNumber?: string; episodeNumber?: string; translator?: string; posterUrl?: string; }) =>
+    ipcRenderer.invoke('download:start', episodeId, url, title, subUrls, metadata),
   pauseDownload: (id: string) => ipcRenderer.invoke('download:pause', id),
   resumeDownload: (id: string) => ipcRenderer.invoke('download:resume', id),
   cancelDownload: (id: string) => ipcRenderer.invoke('download:cancel', id),
@@ -96,8 +96,8 @@ const api: AnimecixAPI = {
   },
 
   // --- Cache (Phase 3) ---
-  cacheEpisode: (episodeId: string, videoUrl: string, isHls: boolean, subs: { language: string; url: string }[]) =>
-    ipcRenderer.invoke('cache:episode', episodeId, videoUrl, isHls, subs),
+  cacheEpisode: (episodeId: string, videoUrl: string, isHls: boolean, subs: { language: string; url: string }[], metadata?: { animeTitle: string; seasonNumber?: string; episodeNumber?: string; translator?: string; posterUrl?: string; }) =>
+    ipcRenderer.invoke('cache:episode', episodeId, videoUrl, isHls, subs, metadata),
   isAvailableOffline: (episodeId: string) => ipcRenderer.invoke('offline:isAvailable', episodeId),
   getOfflineUrl: (episodeId: string) => ipcRenderer.invoke('offline:getUrl', episodeId),
 
@@ -106,6 +106,13 @@ const api: AnimecixAPI = {
   deleteDownload: (episodeId: string) => ipcRenderer.invoke('storage:deleteDownload', episodeId),
   deleteCache: (episodeId: string) => ipcRenderer.invoke('storage:deleteCache', episodeId),
   setCacheMaxBytes: (maxBytes: number) => ipcRenderer.invoke('storage:setCacheMax', maxBytes),
+
+  // --- Library (Phase 7) ---
+  getLibraryAnimes: () => ipcRenderer.invoke('library:getAnimes'),
+  getLibraryEpisodes: (animeTitle: string) => ipcRenderer.invoke('library:getEpisodes', animeTitle),
+  showLibrary: () => ipcRenderer.invoke('library:show'),
+  hideLibrary: () => ipcRenderer.invoke('library:hide'),
+  playOfflineEpisode: (episodeId: string) => ipcRenderer.invoke('library:playEpisode', episodeId),
 };
 
 // --- Updater API (Phase 4) — conforming to UpdaterApi ---
