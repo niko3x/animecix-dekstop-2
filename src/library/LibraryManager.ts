@@ -1,27 +1,9 @@
-/**
- * LibraryManager -- BrowserView overlay that displays the offline library page
- * as a full-window overlay in the main window.
- *
- * Architecture choice: BrowserView overlay (not iframe) because:
- * - The library must display on offline launch BEFORE the Angular website has
- *   bootstrapped (there is no website to host an iframe when offline).
- * - BrowserView is main-process-controlled and survives navigation.
- * - Follows the UpdaterBanner pattern already established in the codebase.
- *
- * Key differences from UpdaterBanner:
- * 1) Full-window bounds (x:0, y:0, full width+height) instead of bottom strip.
- * 2) Public show/hide methods (UpdaterBanner's were private).
- * 3) No service dependency in constructor.
- * 4) Loads animecix-library://bundle/ URL via custom protocol.
- * 5) Exposes getMainWindow() for use by playEpisode IPC.
- */
-
-import { BrowserView, BrowserWindow, app } from 'electron';
+import { WebContentsView, BrowserWindow, app } from 'electron';
 import path from 'node:path';
 import log from 'electron-log';
 
 export class LibraryManager {
-  private view: BrowserView | null = null;
+  private view: WebContentsView | null = null;
   private resizeHandler: (() => void) | null = null;
   private mainWindow: BrowserWindow;
 
@@ -30,22 +12,22 @@ export class LibraryManager {
   }
 
   show(): void {
-    if (this.view) return; // already visible -- T-07-06 guard
+    if (this.view) return;
 
     const preloadPath = app.isPackaged
       ? path.join(process.resourcesPath, 'app', '.vite', 'build', 'preload.js')
       : path.join(app.getAppPath(), '.vite', 'build', 'preload.js');
 
-    this.view = new BrowserView({
+    this.view = new WebContentsView({
       webPreferences: {
         preload: preloadPath,
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false, // REQUIRED for contextBridge to work
+        sandbox: false,
       },
     });
 
-    this.mainWindow.addBrowserView(this.view);
+    this.mainWindow.contentView.addChildView(this.view);
     this.updateBounds();
 
     this.resizeHandler = () => this.updateBounds();
@@ -56,8 +38,7 @@ export class LibraryManager {
         this.view.webContents.focus();
       }
     });
-    this.mainWindow.setTopBrowserView(this.view);
-    log.info('[library] Library BrowserView shown');
+    log.info('[library] Library WebContentsView shown');
   }
 
   hide(): void {
@@ -68,10 +49,10 @@ export class LibraryManager {
       this.resizeHandler = null;
     }
 
-    this.mainWindow.removeBrowserView(this.view);
-    (this.view.webContents as Electron.WebContents).destroy?.();
+    this.mainWindow.contentView.removeChildView(this.view);
+    this.view.webContents.close();
     this.view = null;
-    log.info('[library] Library BrowserView hidden');
+    log.info('[library] Library WebContentsView hidden');
   }
 
   isVisible(): boolean {
