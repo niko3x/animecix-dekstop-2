@@ -19,6 +19,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import log from 'electron-log';
 
+let pendingOfflineData: { video: any; skipMeta: any } | null = null;
+
 export function registerLibraryIpc(
   mainWindow: BrowserWindow,
   storage: StorageService,
@@ -38,6 +40,12 @@ export function registerLibraryIpc(
 
   ipcMain.handle('library:hide', async () => {
     libraryManager.hide();
+  });
+
+  ipcMain.handle('library:getOfflineVideoData', async () => {
+    const data = pendingOfflineData;
+    pendingOfflineData = null;
+    return data;
   });
 
   ipcMain.handle('library:playEpisode', async (_event, episodeId: string) => {
@@ -82,24 +90,19 @@ export function registerLibraryIpc(
     // The "/embed/offline" path is a dummy -- the player will receive real
     // data via initVideoData message below (same pattern as Angular's loadOfflineVideo).
     if (!mainWindow.isDestroyed()) {
-      const videoData = JSON.stringify({
-        _id: episodeId,
-        urls: [{ label: 'offline', url: offlineUrl, size: 0 }],
-        subs: subtitles,
-        duration: 0,
-        title_id: '',
-        season_number: '',
-        episode_number: '',
-        translator: '',
-      });
-
-      // Inject offline data at dom-ready (before React module scripts execute).
-      // This sets window.__offlineVideoData so the player reads it synchronously at mount.
-      mainWindow.webContents.once('dom-ready', () => {
-        mainWindow.webContents.executeJavaScript(
-          `window.__offlineVideoData = { video: ${videoData}, skipMeta: null };`
-        ).catch(() => {});
-      });
+      pendingOfflineData = {
+        video: {
+          _id: episodeId,
+          urls: [{ label: '720p', url: offlineUrl, size: 0 }],
+          subs: subtitles,
+          duration: 0,
+          title_id: '',
+          season_number: '',
+          episode_number: '',
+          translator: '',
+        },
+        skipMeta: null,
+      };
       await mainWindow.loadURL('tau-player://bundle/embed/offline');
       log.info(`[library] Playing offline episode: ${episodeId}`);
     }

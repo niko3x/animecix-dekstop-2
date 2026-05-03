@@ -113,6 +113,7 @@ const api: AnimecixAPI = {
   showLibrary: () => ipcRenderer.invoke('library:show'),
   hideLibrary: () => ipcRenderer.invoke('library:hide'),
   playOfflineEpisode: (episodeId: string) => ipcRenderer.invoke('library:playEpisode', episodeId),
+  getOfflineVideoData: () => ipcRenderer.invoke('library:getOfflineVideoData'),
 };
 
 // --- Updater API (Phase 4) — conforming to UpdaterApi ---

@@ -73,13 +73,15 @@ export function useVideoData(initialId: string, initialVid?: string) {
   // Initial fetch — starts immediately but setPrefetchedData cancels it if
   // pre-fetched data arrives via postMessage before the API responds
   useEffect(() => {
-    const offlineData = (window as any).__offlineVideoData;
-    if (offlineData) {
-      delete (window as any).__offlineVideoData;
-      setPrefetchedData(offlineData.video, offlineData.skipMeta ?? null);
+    if (initialId === 'offline') {
+      (window as any).animecix?.getOfflineVideoData?.().then((data: any) => {
+        if (data?.video) {
+          setPrefetchedData(data.video, data.skipMeta ?? null);
+        }
+      }).catch(() => {});
       return;
     }
-    if (!prefetchedRef.current && initialId !== 'offline') {
+    if (!prefetchedRef.current) {
       fetchVideo(initialId, initialVid);
     }
     return () => {
