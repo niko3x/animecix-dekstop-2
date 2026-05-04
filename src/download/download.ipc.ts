@@ -58,6 +58,12 @@ export function registerDownloadIpc(
   });
 
   queue.on('downloadComplete', (item: { id: string; episodeId: string; title: string }) => {
+    // Update episode_metadata with final size so library is independent of download_queue
+    const dl = storage.getDownloadById(item.id);
+    if (dl) {
+      storage.updateEpisodeMetadataSize(item.episodeId, dl.totalBytes);
+    }
+
     mainWindow.webContents.send('download:complete', {
       id: item.id,
       episodeId: item.episodeId,
@@ -86,6 +92,7 @@ export function registerDownloadIpc(
       const posterPath = metadata.posterUrl
         ? await downloadPoster(metadata.posterUrl, episodeId)
         : '';
+      const cacheEntry = storage.getCacheEntry(episodeId);
       storage.upsertEpisodeMetadata({
         episodeId,
         animeTitle: metadata.animeTitle,
@@ -95,6 +102,7 @@ export function registerDownloadIpc(
         posterUrl: metadata.posterUrl ?? '',
         posterPath,
         source: 'cache',
+        sizeBytes: cacheEntry?.sizeBytes ?? 0,
       });
     }
   });

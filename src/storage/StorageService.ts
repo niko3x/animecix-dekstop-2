@@ -21,6 +21,22 @@ export class StorageService {
 
   private initSchema(): void {
     this.db.exec(INIT_SCHEMA);
+    this.runMigrations();
+  }
+
+  private runMigrations(): void {
+    // Add size_bytes column to episode_metadata for existing installs
+    const migrated = this.db
+      .prepare("SELECT value FROM settings WHERE key = '_migration_ep_meta_size'")
+      .get() as { value: string } | undefined;
+    if (migrated && migrated.value === '0') {
+      try {
+        this.db.exec("ALTER TABLE episode_metadata ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT 0");
+      } catch {
+        // Column already exists — ignore
+      }
+      this.db.prepare("UPDATE settings SET value = '1' WHERE key = '_migration_ep_meta_size'").run();
+    }
   }
 
   getSetting(key: string): string | null {
@@ -261,6 +277,10 @@ export class StorageService {
     this.db.prepare(`DELETE FROM episode_metadata WHERE episode_id = ?`).run(episodeId);
   }
 
+  updateEpisodeMetadataSize(episodeId: string, sizeBytes: number): void {
+    this.db.prepare(`UPDATE episode_metadata SET size_bytes = ? WHERE episode_id = ?`).run(sizeBytes, episodeId);
+  }
+
   getCacheStats(): { totalBytes: number; episodes: { episodeId: string; sizeBytes: number }[] } {
     const totalRow = this.db
       .prepare(`SELECT COALESCE(SUM(size_bytes), 0) as total FROM cache_index`)
@@ -309,17 +329,18 @@ export class StorageService {
     posterUrl: string;
     posterPath: string;
     source: 'download' | 'cache';
+    sizeBytes?: number;
   }): void {
     this.db
       .prepare(
         `INSERT OR REPLACE INTO episode_metadata
-         (episode_id, anime_title, season_number, episode_number, translator, poster_url, poster_path, source, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`
+         (episode_id, anime_title, season_number, episode_number, translator, poster_url, poster_path, source, size_bytes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`
       )
       .run(
         meta.episodeId, meta.animeTitle, meta.seasonNumber,
         meta.episodeNumber, meta.translator, meta.posterUrl,
-        meta.posterPath, meta.source
+        meta.posterPath, meta.source, meta.sizeBytes ?? 0
       );
   }
 
@@ -359,14 +380,11 @@ export class StorageService {
   }[] {
     const rows = this.db
       .prepare(
-        `SELECT em.episode_id, em.anime_title, em.season_number, em.episode_number,
-                em.translator, em.source, em.created_at,
-                COALESCE(dq.total_bytes, ci.size_bytes, 0) as size_bytes
-         FROM episode_metadata em
-         LEFT JOIN download_queue dq ON dq.episode_id = em.episode_id AND dq.status = 'completed'
-         LEFT JOIN cache_index ci ON ci.episode_id = em.episode_id
-         WHERE em.anime_title = ?
-         ORDER BY em.season_number ASC, CAST(em.episode_number AS INTEGER) ASC`
+        `SELECT episode_id, anime_title, season_number, episode_number,
+                translator, source, size_bytes, created_at
+         FROM episode_metadata
+         WHERE anime_title = ?
+         ORDER BY season_number ASC, CAST(episode_number AS INTEGER) ASC`
       )
       .all(animeTitle) as Record<string, unknown>[];
     return rows.map((r) => ({

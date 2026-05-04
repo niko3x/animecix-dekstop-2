@@ -59,7 +59,11 @@ export const INIT_SCHEMA = `
     poster_url     TEXT NOT NULL DEFAULT '',
     poster_path    TEXT NOT NULL DEFAULT '',
     source         TEXT NOT NULL DEFAULT 'download',
+    size_bytes     INTEGER NOT NULL DEFAULT 0,
     created_at     INTEGER NOT NULL DEFAULT (unixepoch())
   );
+  -- Migration: add size_bytes if missing (existing installs)
+  INSERT OR IGNORE INTO settings (key, value) VALUES ('_migration_ep_meta_size', '0');
+
   CREATE INDEX IF NOT EXISTS idx_episode_metadata_anime ON episode_metadata (anime_title);
 `;
