@@ -257,6 +257,10 @@ export class StorageService {
     this.db.prepare(`DELETE FROM cache_index WHERE episode_id = ?`).run(episodeId);
   }
 
+  deleteEpisodeMetadata(episodeId: string): void {
+    this.db.prepare(`DELETE FROM episode_metadata WHERE episode_id = ?`).run(episodeId);
+  }
+
   getCacheStats(): { totalBytes: number; episodes: { episodeId: string; sizeBytes: number }[] } {
     const totalRow = this.db
       .prepare(`SELECT COALESCE(SUM(size_bytes), 0) as total FROM cache_index`)

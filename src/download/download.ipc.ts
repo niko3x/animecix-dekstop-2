@@ -159,6 +159,7 @@ export function registerDownloadIpc(
       try { fs.unlinkSync(path.join(dir, path.basename(dl.outputPath, '.mp4') + '.' + sub.language + '.ass')); } catch { /* ignore */ }
     }
     storage.deleteDownload(episodeId);
+    storage.deleteEpisodeMetadata(episodeId);
   });
 
   ipcMain.handle('storage:deleteCache', async (_event, episodeId: string) => {
@@ -171,6 +172,7 @@ export function registerDownloadIpc(
       try { fs.unlinkSync(sub.path); } catch { /* ignore */ }
     }
     storage.deleteCacheEntry(episodeId);
+    storage.deleteEpisodeMetadata(episodeId);
   });
 
   ipcMain.handle('storage:setCacheMax', async (_event, maxBytes: number) => {
