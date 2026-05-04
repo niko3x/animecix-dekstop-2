@@ -9,7 +9,7 @@
  * - The same preload.ts file is reused so animecixAPI.updater is available in the banner.
  */
 
-import { BrowserView, BrowserWindow, app, ipcMain } from 'electron';
+import { BrowserView, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import log from 'electron-log';
 import { UPDATER_CHANNELS } from '../types/updater.js';
@@ -59,7 +59,7 @@ export class UpdaterBanner {
   private show(): void {
     if (this.view) return; // already visible
 
-    const preloadPath = path.join(app.getAppPath(), '.vite', 'build', 'preload.js');
+    const preloadPath = path.join(__dirname, 'preload.js');
 
     this.view = new BrowserView({
       webPreferences: {
