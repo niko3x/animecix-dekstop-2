@@ -17,6 +17,24 @@ import type { UpdaterService } from './UpdaterService.js';
 
 const BANNER_HEIGHT = 64;
 
+const BANNER_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0;font-family:system-ui,-apple-system,sans-serif;background:#111827;color:#f9fafb;height:100%;overflow:hidden}
+.banner{display:flex;align-items:center;gap:12px;padding:0 16px;height:100%;border-top:1px solid #1f2937}
+.msg{flex:1;font-size:14px;font-weight:500;color:#e5e7eb}
+button{padding:8px 14px;border:0;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500}
+button:hover{filter:brightness(1.15)}
+.primary{background:#3b82f6;color:#fff}
+.secondary{background:transparent;color:#9ca3af;border:1px solid #374151}
+</style></head><body>
+<div class="banner"><span class="msg">Yeni sürüm hazır</span>
+<button class="primary" id="install">Şimdi yeniden başlat</button>
+<button class="secondary" id="dismiss">Sonra</button></div>
+<script>
+document.getElementById('install').onclick=()=>window.animecixAPI.updater.install();
+document.getElementById('dismiss').onclick=()=>{window.animecixAPI.updater.dismissBanner();};
+</script></body></html>`;
+
 export class UpdaterBanner {
   private view: BrowserView | null = null;
   private mainWindow: BrowserWindow;
@@ -41,9 +59,7 @@ export class UpdaterBanner {
   private show(): void {
     if (this.view) return; // already visible
 
-    const preloadPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'app', '.vite', 'build', 'preload.js')
-      : path.join(app.getAppPath(), '.vite', 'build', 'preload.js');
+    const preloadPath = path.join(app.getAppPath(), '.vite', 'build', 'preload.js');
 
     this.view = new BrowserView({
       webPreferences: {
@@ -63,11 +79,9 @@ export class UpdaterBanner {
     this.resizeHandler = () => this.updateBounds();
     this.mainWindow.on('resize', this.resizeHandler);
 
-    const bannerPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'app', '.vite', 'build', 'updater-banner.html')
-      : path.join(app.getAppPath(), 'src', 'player-page', 'updater-banner.html');
-
-    this.view.webContents.loadFile(bannerPath).catch((err) => {
+    this.view.webContents.loadURL(
+      'data:text/html;charset=utf-8,' + encodeURIComponent(BANNER_HTML)
+    ).catch((err) => {
       log.error('[updater-banner] Failed to load banner HTML:', err?.message);
     });
 
