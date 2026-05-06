@@ -54,6 +54,8 @@ jobs:
             platform: darwin
           - os: windows-latest
             platform: win32
+          - os: ubuntu-latest
+            platform: linux
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
 
@@ -133,6 +135,10 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: npx electron-forge make --arch=x64 --platform=win32
 
+      - name: Make Linux (x64 deb + rpm + AppImage)
+        if: matrix.os == 'ubuntu-latest'
+        run: npx electron-forge make --arch=x64 --platform=linux
+
       # -------- upload artifacts to draft release --------
       # Note on env: set GITHUB_TOKEN (not GH_TOKEN) so both gh CLI and
       # our generate-update-manifest.mjs find it. Do NOT override
@@ -179,6 +185,19 @@ jobs:
             -exec gh release upload "$TAG" {} --clobber --repo "$GITHUB_REPOSITORY" \;
           echo "--- Generating and uploading latest.yml ---"
           node scripts/generate-update-manifest.mjs win32
+
+      - name: Upload Linux artifacts
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "--- Artifacts in out/make ---"
+          find out/make -type f | sort
+          echo "--- Uploading deb + rpm + AppImage ---"
+          find out/make -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) \
+            -exec gh release upload "$TAG" {} --clobber --repo "$GITHUB_REPOSITORY" \;
 
       # -------- cleanup (runs even on failure) --------
       # apple-actions/import-codesign-certs creates its own temp keychain and
